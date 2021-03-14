@@ -3,12 +3,12 @@
 import argparse
 import sys
 
+from collections import namedtuple
+from enum import Enum
+from pathlib import Path
+
 def build_cmdline_parser():
     clp_parser = argparse.ArgumentParser(description='Command-line tool for investment management')
-
-    clp_parser.add_argument('--verbose',
-                             action='store_true',
-                             help='print additional details')
 
     clp_commands = clp_parser.add_subparsers(title='Portfolio management commands',
                                              description='Execute transactions, create/print reports',
@@ -16,44 +16,115 @@ def build_cmdline_parser():
 
     clp_command_buy = clp_commands.add_parser('buy',
                                                help='buy assets')
-
     clp_command_buy.add_argument('buy',
                                   action='store_true',
                                   help='buy assets')
+
+    clp_command_datapath = clp_commands.add_parser('datapath', 
+                                                    help='location of the data files')
+    clp_command_datapath.add_argument('--set',
+                                       type=Path,
+                                       dest='path',
+                                       help='directory path for the data files')
+
+    clp_command_verbosity = clp_commands.add_parser('verbosity', 
+                                                     help='level of detail printed')
+    clp_command_verbosity.add_argument('--toggle',
+                                        action='store_true',
+                                        help='change from low to high, or vice versa')
 
     clp_commands.add_parser('quit', help='exit the command-line tool')
 
     return clp_parser
 
-def interactive_mode():
-    clp_parser = build_cmdline_parser()
+class Verbosity(Enum):
+    LOW=1
+    HIGH=2
 
+Settings=namedtuple('Settings', ['datapath','verbosity'])
+
+data_files={'assets.csv': 'ledger of owned financial instruments',
+            'income.csv': 'record of income received for owned assets',
+            'tfsa.csv': 'list of TFSA allowed and actual contributions',
+            'transactions.csv': 'record of all asset transactions'}
+
+def buy_asset(args):
+    print("BUY BUY BUY")
+
+def verbosity(args, settings):
+    print(f'Current verbosity level is {settings.verbosity.name}')
+    new_verbosity=settings.verbosity
+
+    if args.toggle:
+        if settings.verbosity==Verbosity.LOW:
+            new_verbosity=Verbosity.HIGH
+        else:
+            new_verbosity=Verbosity.LOW
+        print(f'New verbosity level is {new_verbosity.name}')
+
+    return Settings(verbosity=new_verbosity,
+                    datapath=settings.datapath)
+
+def datapath(args, settings):
+    print(f'Current datapath is "{settings.datapath}"')
+    new_datapath=settings.datapath
+
+    if args.path:
+        if args.path.is_dir():
+            print(f'\nVerifying required data files present in new dir ...')
+            csv_files_exist=True
+            for csv_file in data_files:
+                csv_file_path=args.path/Path(csv_file)
+                if csv_file_path.exists():
+                    print(f'  {csv_file_path} exists')
+                else:
+                    print(f'  {csv_file_path} not found')
+                    csv_files_exist=False
+
+            if csv_files_exist:
+                new_datapath=args.path
+                print(f'\nNew datapath is "{new_datapath}"')
+            else:
+                print(f'\nERROR: not all required data files present in "{args.path}"')
+                print(f'datapath remains unchanged: "{settings.datapath}"')
+        else:
+            print(f'\nERROR: "{args.path}" is not a valid directory')
+
+    return Settings(verbosity=settings.verbosity,
+                    datapath=Path(new_datapath))
+
+dispatch={'buy': buy_asset,
+          'datapath': datapath,
+          'verbosity': verbosity}
+
+def interactive_mode():
+    settings=Settings(verbosity=Verbosity.LOW,
+                      datapath=Path('data'))
+
+    clp_parser=build_cmdline_parser()
     clp_parser.print_help()
 
     while True:
         try:
-            cmdline = input('> ')
+            cmdline=input('> ')
         except EOFError:
             break
 
-        cmdline_tokens = cmdline.split()
-        if len(cmdline_tokens) == 0: continue
+        cmdline_tokens=cmdline.split()
+        if len(cmdline_tokens)==0: continue
 
         try:
             args = clp_parser.parse_args(cmdline_tokens)
         except:
-            args = None
+            args=None
         else:
-            print(args)
-            if args.command=='quit':
+            if args.command in dispatch:
+                settings=dispatch[args.command](args, settings)
+            elif args.command=='quit':
                 break
-            elif args.command=='buy':
-                print("BUY BUY BUY")
             else:
                 print("ERROR: Unrecognized command.")
 
-if __name__ == '__main__':
-
+if __name__=='__main__':
     interactive_mode()
-
     sys.exit(0)
