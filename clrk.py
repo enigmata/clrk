@@ -65,6 +65,47 @@ def verbosity(args, settings):
     return Settings(verbosity=new_verbosity,
                     datapath=settings.datapath)
 
+def data_files_exist(path, print_output):
+    csv_files_missing=False
+    if path.is_dir():
+        for csv_file in data_files:
+            csv_file_path=path/Path(csv_file)
+            if csv_file_path.exists():
+                if print_output:
+                    print(f'  {csv_file_path} exists')
+            else:
+                csv_files_missing=True
+                if print_output:
+                    print(f'  {csv_file_path} not found')
+    else:
+        csv_files_missing=True
+        if print_output:
+            print(f'\nERROR: "{path}" is not a valid directory')
+
+    return not csv_files_missing
+
+def initialize_settings():
+    verbosity=Verbosity.LOW
+    datapath=Path('data')
+    if data_files_exist(datapath, False):
+        print(f'Default data path is "{datapath}"')
+    else:
+        valid_datapath=False
+        while not valid_datapath:
+            try:
+                candidate_path=input('\nEnter path to data files > ')
+            except EOFError:
+                continue
+            datapath=Path(candidate_path)
+            if data_files_exist(datapath, True):
+                print(f'\ndatapath is set to "{datapath}"')
+                valid_datapath=True
+
+    print(f'\nverbosity is set to "{verbosity.name}"\n')
+
+    return Settings(verbosity=verbosity,
+                    datapath=datapath)
+
 def datapath(args, settings):
     print(f'Current datapath is "{settings.datapath}"')
     new_datapath=settings.datapath
@@ -72,16 +113,7 @@ def datapath(args, settings):
     if args.path:
         if args.path.is_dir():
             print(f'\nVerifying required data files present in new dir ...')
-            csv_files_exist=True
-            for csv_file in data_files:
-                csv_file_path=args.path/Path(csv_file)
-                if csv_file_path.exists():
-                    print(f'  {csv_file_path} exists')
-                else:
-                    print(f'  {csv_file_path} not found')
-                    csv_files_exist=False
-
-            if csv_files_exist:
+            if data_files_exist(args.path, True):
                 new_datapath=args.path
                 print(f'\nNew datapath is "{new_datapath}"')
             else:
@@ -98,8 +130,8 @@ dispatch={'buy': buy_asset,
           'verbosity': verbosity}
 
 def interactive_mode():
-    settings=Settings(verbosity=Verbosity.LOW,
-                      datapath=Path('data'))
+    print("\nInitializing ...")
+    settings=initialize_settings()
 
     clp_parser=build_cmdline_parser()
     clp_parser.print_help()
