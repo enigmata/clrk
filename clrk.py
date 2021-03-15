@@ -1,11 +1,29 @@
 #!/usr/bin/env python3
 
 import argparse
+import pandas as pd
 import sys
 
 from collections import namedtuple
 from enum import Enum
 from pathlib import Path
+
+class Verbosity(Enum):
+    LOW=1
+    HIGH=2
+
+Settings=namedtuple('Settings', ['datapath','verbosity'])
+InvestmentDataDetails=namedtuple('InvestmentDataDetails', ['filename','description'])
+
+investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
+                                                 description='ledger of owned financial instruments'),
+                 'income': InvestmentDataDetails(filename=Path('income.csv'),
+                                                 description='record of income received for owned assets'),
+                 'tfsa': InvestmentDataDetails(filename=Path('tfsa.csv'),
+                                               description='list of TFSA allowed and actual contributions'),
+                 'transactions': InvestmentDataDetails(filename=Path('transactions.csv'),
+                                                       description='record of all asset transactions'),
+           }
 
 def build_cmdline_parser():
     clp_parser = argparse.ArgumentParser(description='Command-line tool for investment management')
@@ -13,6 +31,12 @@ def build_cmdline_parser():
     clp_commands = clp_parser.add_subparsers(title='Portfolio management commands',
                                              description='Execute transactions, create/print reports',
                                              dest='command')
+
+    clp_command_list = clp_commands.add_parser('list',
+                                                help='display details of investment data')
+    clp_command_list.add_argument('list',
+                                  choices=investment_data.keys(),
+                                  help='display details of specified investment data')
 
     clp_command_buy = clp_commands.add_parser('buy',
                                                help='buy assets')
@@ -37,19 +61,15 @@ def build_cmdline_parser():
 
     return clp_parser
 
-class Verbosity(Enum):
-    LOW=1
-    HIGH=2
+def list_data(args, settings):
+    csv_file=pd.read_csv(investment_data[args.list].filename)
+    print(csv_file.to_string(index=False, show_dimensions=True))
 
-Settings=namedtuple('Settings', ['datapath','verbosity'])
+    return settings
 
-data_files={'assets.csv': 'ledger of owned financial instruments',
-            'income.csv': 'record of income received for owned assets',
-            'tfsa.csv': 'list of TFSA allowed and actual contributions',
-            'transactions.csv': 'record of all asset transactions'}
-
-def buy_asset(args):
+def buy_asset(args, settings):
     print("BUY BUY BUY")
+    return settings
 
 def verbosity(args, settings):
     print(f'Current verbosity level is {settings.verbosity.name}')
@@ -68,8 +88,8 @@ def verbosity(args, settings):
 def data_files_exist(path, print_output):
     csv_files_missing=False
     if path.is_dir():
-        for csv_file in data_files:
-            csv_file_path=path/Path(csv_file)
+        for type in investment_data:
+            csv_file_path=path/investment_data[type].filename
             if csv_file_path.exists():
                 if print_output:
                     print(f'  {csv_file_path} exists')
@@ -101,7 +121,11 @@ def initialize_settings():
                 print(f'\ndatapath is set to "{datapath}"')
                 valid_datapath=True
 
-    print(f'\nverbosity is set to "{verbosity.name}"\n')
+    for type in investment_data:
+        investment_data[type]=InvestmentDataDetails(filename=datapath/investment_data[type].filename,
+                                                    description=investment_data[type].description)
+
+    print(f'verbosity is set to "{verbosity.name}"\n')
 
     return Settings(verbosity=verbosity,
                     datapath=datapath)
@@ -127,7 +151,9 @@ def datapath(args, settings):
 
 dispatch={'buy': buy_asset,
           'datapath': datapath,
-          'verbosity': verbosity}
+          'verbosity': verbosity,
+          'list': list_data,
+         }
 
 def interactive_mode():
     print("\nInitializing ...")
