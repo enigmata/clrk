@@ -26,7 +26,9 @@ investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
            }
 
 def build_cmdline_parser():
-    clp_parser = argparse.ArgumentParser(description='Command-line tool for investment management')
+    clp_parser = argparse.ArgumentParser(prog='',
+                                         description='Command-line tool for investment management',
+                                         add_help=False)
 
     clp_commands = clp_parser.add_subparsers(title='Portfolio management commands',
                                              description='Execute transactions, create/print reports',
@@ -57,6 +59,7 @@ def build_cmdline_parser():
                                         action='store_true',
                                         help='change from low to high, or vice versa')
 
+    clp_commands.add_parser('help', help='print help overview')
     clp_commands.add_parser('quit', help='exit the command-line tool')
 
     return clp_parser
@@ -178,6 +181,8 @@ def interactive_mode():
         else:
             if args.command in dispatch:
                 settings=dispatch[args.command](args, settings)
+            elif args.command=='help':
+                clp_parser.print_help()
             elif args.command=='quit':
                 break
             else:
