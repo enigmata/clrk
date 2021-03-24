@@ -5,6 +5,7 @@ import pandas as pd
 import sys
 
 from collections import namedtuple
+from datetime import date
 from enum import Enum
 from pathlib import Path
 
@@ -13,17 +14,23 @@ class Verbosity(Enum):
     HIGH=2
 
 Settings=namedtuple('Settings', ['datapath','verbosity'])
-InvestmentDataDetails=namedtuple('InvestmentDataDetails', ['filename','description'])
+InvestmentDataDetails=namedtuple('InvestmentDataDetails', ['filename','columns','description'])
+AccountTypes=['sdrsp','locked_sdrsp','margin','tfsa','resp']
+TransactionTypes=['buy','sell']
 
 investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
+                                                 columns=['name','market','type','subtype','income_per_unit_period','units_sdrsp','units_locked_sdrsp','units_margin','units_tfsa','units_resp','income_freq_months','income_first_month','income_day_of_month'],
                                                  description='ledger of owned financial instruments'),
                  'income': InvestmentDataDetails(filename=Path('income.csv'),
+                                                 columns=['name','date','account','units','income'],
                                                  description='record of income received for owned assets'),
                  'tfsa': InvestmentDataDetails(filename=Path('tfsa.csv'),
+                                               columns=['year','contributed','max_contribution'],
                                                description='list of TFSA allowed and actual contributions'),
                  'transactions': InvestmentDataDetails(filename=Path('transactions.csv'),
+                                                       columns=['date','type','name','account','units','unit_price','fees','total_cost'],
                                                        description='record of all asset transactions'),
-           }
+}
 
 def build_cmdline_parser():
     clp_parser = argparse.ArgumentParser(prog='',
@@ -40,11 +47,30 @@ def build_cmdline_parser():
                                   choices=investment_data.keys(),
                                   help='display details of specified investment data')
 
-    clp_command_buy = clp_commands.add_parser('buy',
-                                               help='buy assets')
-    clp_command_buy.add_argument('buy',
-                                  action='store_true',
-                                  help='buy assets')
+    clp_command_buy = clp_commands.add_parser('transact',
+                                               help='buy or sell assets')
+    clp_command_buy.add_argument('type',
+                                  choices=TransactionTypes,
+                                  help='type of transaction: buy or sell')
+    clp_command_buy.add_argument('account',
+                                  choices=AccountTypes,
+                                  help='account in which transaction was executed')
+    clp_command_buy.add_argument('name',
+                                  help='name of asset being transacted')
+    clp_command_buy.add_argument('units',
+                                  type=int,
+                                  help='number of units bought or sold')
+    clp_command_buy.add_argument('price',
+                                  type=float,
+                                  help='price of units bought or sold (e.g. "9.99")')
+    clp_command_buy.add_argument('--date',
+                                  type=date.fromisoformat,
+                                  default=date.today(),
+                                  help='transaction date (e.g. "2021-03-31")')
+    clp_command_buy.add_argument('--fees',
+                                  type=float,
+                                  default=9.99,
+                                  help='total transaction fees (e.g. "9.99")')
 
     clp_command_datapath = clp_commands.add_parser('datapath', 
                                                     help='location of the data files')
@@ -65,13 +91,22 @@ def build_cmdline_parser():
     return clp_parser
 
 def list_data(args, settings):
-    csv_file=pd.read_csv(investment_data[args.list].filename)
-    print(csv_file.to_string(index=False, show_dimensions=True))
-
+    csv_file_df=pd.read_csv(investment_data[args.list].filename)
+    print(csv_file_df.to_string(index=False, show_dimensions=True))
     return settings
 
-def buy_asset(args, settings):
-    print("BUY BUY BUY")
+def buy_sell_asset(args, settings):
+    investment_data_type='transactions'
+    total_cost=round((args.units*args.price)+args.fees,2)
+    df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,args.units,round(args.price,2),round(args.fees,2),total_cost]],
+                    columns=investment_data[investment_data_type].columns)
+    print('\nTransaction data to append:\n')
+    print(df.to_string(index=False, show_dimensions=True))
+    csv_file_df=pd.read_csv(investment_data[investment_data_type].filename)
+    combined_df=pd.concat([csv_file_df, df])
+    print('\nTransaction data appended and written to file:\n')
+    print(combined_df.to_string(index=False, show_dimensions=True),'\n')
+    combined_df.to_csv(investment_data[investment_data_type].filename, index=False)
     return settings
 
 def verbosity(args, settings):
@@ -126,6 +161,7 @@ def initialize_settings():
 
     for type in investment_data:
         investment_data[type]=InvestmentDataDetails(filename=datapath/investment_data[type].filename,
+                                                    columns=investment_data[type].columns,
                                                     description=investment_data[type].description)
 
     print(f'verbosity is set to "{verbosity.name}"\n')
@@ -152,7 +188,7 @@ def datapath(args, settings):
     return Settings(verbosity=settings.verbosity,
                     datapath=Path(new_datapath))
 
-dispatch={'buy': buy_asset,
+dispatch={'transact': buy_sell_asset,
           'datapath': datapath,
           'verbosity': verbosity,
           'list': list_data,
