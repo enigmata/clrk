@@ -46,6 +46,8 @@ def build_cmdline_parser():
     clp_command_list.add_argument('list',
                                   choices=investment_data.keys(),
                                   help='display details of specified investment data')
+    clp_command_list.add_argument('--filter',
+                                  help="e.g. ((df['name']=='TD')|(df['name']=='ENB'))&(~(df['account']=='margin'))")
 
     clp_command_buy = clp_commands.add_parser('transact',
                                                help='buy or sell assets')
@@ -91,8 +93,11 @@ def build_cmdline_parser():
     return clp_parser
 
 def list_data(args, settings):
-    csv_file_df=pd.read_csv(investment_data[args.list].filename)
-    print(csv_file_df.to_string(index=False, show_dimensions=True))
+    df=pd.read_csv(investment_data[args.list].filename)
+    if args.filter:
+        filter=eval(args.filter)
+        df=df[filter]
+    print(df.to_string(index=False, show_dimensions=True))
     return settings
 
 def buy_sell_asset(args, settings):
