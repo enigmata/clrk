@@ -19,7 +19,7 @@ AccountTypes=['sdrsp','locked_sdrsp','margin','tfsa','resp']
 TransactionTypes=['buy','sell']
 
 investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
-                                                 columns=['name','market','type','subtype','income_per_unit_period','units_sdrsp','units_locked_sdrsp','units_margin','units_tfsa','units_resp','income_freq_months','income_first_month','income_day_of_month'],
+                                                 columns=['name','market','type','subtype','income_per_unit_period','sdrsp','locked_sdrsp','margin','tfsa','resp','income_freq_months','income_first_month','income_day_of_month'],
                                                  description='ledger of owned financial instruments'),
                  'income': InvestmentDataDetails(filename=Path('income.csv'),
                                                  columns=['name','date','account','units','income'],
