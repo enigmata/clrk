@@ -74,6 +74,24 @@ def build_cmdline_parser():
                                   default=9.99,
                                   help='total transaction fees (e.g. "9.99")')
 
+    clp_command_income = clp_commands.add_parser('income',
+                                               help='add income payments')
+    clp_command_income.add_argument('name',
+                                  help='name of asset for which income is received')
+    clp_command_income.add_argument('account',
+                                  choices=AccountTypes,
+                                  help='account in which income was deposited')
+    clp_command_income.add_argument('units',
+                                  type=int,
+                                  help='number of units of income paid')
+    clp_command_income.add_argument('income',
+                                  type=float,
+                                  help='total income received')
+    clp_command_income.add_argument('--date',
+                                  type=date.fromisoformat,
+                                  default=date.today(),
+                                  help='date income received (e.g. "2021-03-31")')
+
     clp_command_datapath = clp_commands.add_parser('datapath', 
                                                     help='location of the data files')
     clp_command_datapath.add_argument('--set',
@@ -100,18 +118,28 @@ def list_data(args, settings):
     print(df.to_string(index=False, show_dimensions=True))
     return settings
 
+def append_csv(data_type, df_to_append):
+    print(f'\n{data_type} data to append:\n')
+    print(df_to_append.to_string(index=False, show_dimensions=True))
+    csv_file_df=pd.read_csv(investment_data[data_type].filename)
+    combined_df=pd.concat([csv_file_df, df_to_append])
+    print(f'\n{data_type} data appended and written to file:\n')
+    print(combined_df.to_string(index=False, show_dimensions=True),'\n')
+    combined_df.to_csv(investment_data[data_type].filename, index=False)
+
 def buy_sell_asset(args, settings):
     investment_data_type='transactions'
     total_cost=round((args.units*args.price)+args.fees,2)
     df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,args.units,round(args.price,2),round(args.fees,2),total_cost]],
                     columns=investment_data[investment_data_type].columns)
-    print('\nTransaction data to append:\n')
-    print(df.to_string(index=False, show_dimensions=True))
-    csv_file_df=pd.read_csv(investment_data[investment_data_type].filename)
-    combined_df=pd.concat([csv_file_df, df])
-    print('\nTransaction data appended and written to file:\n')
-    print(combined_df.to_string(index=False, show_dimensions=True),'\n')
-    combined_df.to_csv(investment_data[investment_data_type].filename, index=False)
+    append_csv(investment_data_type, df)
+    return settings
+
+def income_received(args, settings):
+    investment_data_type='income'
+    df=pd.DataFrame([[args.name,args.date.strftime("%Y-%m-%d"),args.account,args.units,round(args.income,2)]],
+                    columns=investment_data[investment_data_type].columns)
+    append_csv(investment_data_type, df)
     return settings
 
 def verbosity(args, settings):
@@ -197,6 +225,7 @@ dispatch={'transact': buy_sell_asset,
           'datapath': datapath,
           'verbosity': verbosity,
           'list': list_data,
+          'income': income_received,
          }
 
 def interactive_mode():
