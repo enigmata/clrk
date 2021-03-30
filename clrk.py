@@ -8,6 +8,7 @@ from collections import namedtuple
 from datetime import date
 from enum import Enum
 from pathlib import Path
+from time import localtime, strftime
 
 class Verbosity(Enum):
     LOW=1
@@ -16,6 +17,8 @@ class Verbosity(Enum):
 Settings=namedtuple('Settings', ['datapath','verbosity'])
 InvestmentDataDetails=namedtuple('InvestmentDataDetails', ['filename','columns','description'])
 AccountTypes=['sdrsp','locked_sdrsp','margin','tfsa','resp']
+ReportTypes=['monthly_income']
+ReportFormats=['csv']
 TransactionTypes=['buy','sell']
 
 investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
@@ -24,6 +27,9 @@ investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
                  'income': InvestmentDataDetails(filename=Path('income.csv'),
                                                  columns=['name','date','account','units','income'],
                                                  description='record of income received for owned assets'),
+                 'monthly_income': InvestmentDataDetails(filename=Path('income_monthly.csv'),
+                                                         columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp','total_rrsp','total_nonrrsp','TOTAL'],
+                                                         description='monthly income by account, including overall & RRSP and non-registered totals'),
                  'tfsa': InvestmentDataDetails(filename=Path('tfsa.csv'),
                                                columns=['year','contributed','max_contribution'],
                                                description='list of TFSA allowed and actual contributions'),
@@ -92,6 +98,15 @@ def build_cmdline_parser():
                                   default=date.today(),
                                   help='date income received (e.g. "2021-03-31")')
 
+    clp_command_report = clp_commands.add_parser('report',
+                                                  help='generate a report on investment data')
+    clp_command_report.add_argument('type',
+                                     choices=ReportTypes,
+                                     help='type of report to generate')
+    clp_command_report.add_argument('format',
+                                     choices=ReportFormats,
+                                     help='how to format the report')
+
     clp_command_datapath = clp_commands.add_parser('datapath', 
                                                     help='location of the data files')
     clp_command_datapath.add_argument('--set',
@@ -110,12 +125,35 @@ def build_cmdline_parser():
 
     return clp_parser
 
+def generate_report(args, settings):
+    print(f'Generating the {args.type} report in the {args.format} format ...\n')
+    assets=pd.read_csv(investment_data['assets'].filename)
+    if args.type=='monthly_income':
+        report_series={'name': assets['name']}
+        for account in AccountTypes:
+            report_series[account]=assets[account].mul(assets['income_per_unit_period']).divide(assets['income_freq_months'])
+        report_series['total_rrsp']=report_series['sdrsp'].add(report_series['locked_sdrsp'])
+        report_series['total_nonrrsp']=report_series['margin'].add(report_series['tfsa'])
+        report=pd.DataFrame(report_series)
+        totals_by_account=pd.DataFrame([['TOTAL']+[series.sum() for label,series in report.items() if label!='name']],
+                                       columns=investment_data[args.type].columns[:-1])
+        report=pd.concat([report,totals_by_account],ignore_index=True)
+        report['TOTAL']=report['resp'].add(report['total_rrsp']).add(report['total_nonrrsp'])
+    print(report.to_string(index=False, show_dimensions=True,float_format=lambda x: '$%.2f'%x))
+    if args.format=='csv':
+        fname=investment_data[args.type].filename
+        fname_ts=fname.with_stem(fname.stem+'_'+strftime("%Y-%m-%d-%H_%M_%S",localtime()))
+        report.to_csv(fname_ts, index=False)
+        report.to_csv(fname, index=False)
+        print(f'Report written to "{fname_ts}", and "{fname}" updated accordingly')
+    return settings
+
 def list_data(args, settings):
     df=pd.read_csv(investment_data[args.list].filename)
     if args.filter:
         filter=eval(args.filter)
         df=df[filter]
-    print(df.to_string(index=False, show_dimensions=True))
+    print(df.to_string(index=False, show_dimensions=True,float_format=lambda x: '$%.2f'%x))
     return settings
 
 def append_csv(data_type, df_to_append):
@@ -226,6 +264,7 @@ dispatch={'transact': buy_sell_asset,
           'verbosity': verbosity,
           'list': list_data,
           'income': income_received,
+          'report': generate_report,
          }
 
 def interactive_mode():
