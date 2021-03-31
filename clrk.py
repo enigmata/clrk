@@ -136,11 +136,16 @@ def generate_report(args, settings):
         report_series['total_rrsp']=report_series['sdrsp'].add(report_series['locked_sdrsp'])
         report_series['total_nonrrsp']=report_series['margin'].add(report_series['tfsa'])
         report=pd.DataFrame(report_series)
-        totals_by_account=pd.DataFrame([['TOTAL']+[series.sum() for label,series in report.items() if label!='name']],
-                                       columns=investment_data[args.type].columns[:-2])
-        report=pd.concat([report,totals_by_account],ignore_index=True)
+        monthly_by_account=pd.DataFrame([['TOTAL MONTHLY']+[series.sum() for label,series in report.items() if label!='name']],
+                                         columns=investment_data[args.type].columns[:-2])
+        report=pd.concat([report,monthly_by_account],ignore_index=True)
         report['monthly_total']=report['resp'].add(report['total_rrsp']).add(report['total_nonrrsp'])
+        monthly_totals=report[report['name']=='TOTAL MONTHLY']
         report['yearly_total']=report['monthly_total'].mul(12)
+        monthly_totals=pd.DataFrame([['TOTAL YEARLY']+[series.sum()*12 for label,series in monthly_totals.items() if label!='name' and label!='yearly_total']],
+                                       columns=investment_data[args.type].columns[:-1])
+        report=pd.concat([report,monthly_totals],ignore_index=True)
+        report.at[report.shape[0]-1,'yearly_total']=0
     print(report.to_string(index=False, show_dimensions=True,float_format=lambda x: '$%.2f'%x))
     if args.format=='csv':
         fname=investment_data[args.type].filename
