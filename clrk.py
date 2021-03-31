@@ -28,7 +28,7 @@ investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
                                                  columns=['name','date','account','units','income'],
                                                  description='record of income received for owned assets'),
                  'monthly_income': InvestmentDataDetails(filename=Path('income_monthly.csv'),
-                                                         columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp','total_rrsp','total_nonrrsp','TOTAL'],
+                                                         columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp','total_rrsp','total_nonrrsp','monthly_total','yearly_total'],
                                                          description='monthly income by account, including overall & RRSP and non-registered totals'),
                  'tfsa': InvestmentDataDetails(filename=Path('tfsa.csv'),
                                                columns=['year','contributed','max_contribution'],
@@ -128,6 +128,7 @@ def build_cmdline_parser():
 def generate_report(args, settings):
     print(f'Generating the {args.type} report in the {args.format} format ...\n')
     assets=pd.read_csv(investment_data['assets'].filename)
+    report=pd.DataFrame()
     if args.type=='monthly_income':
         report_series={'name': assets['name']}
         for account in AccountTypes:
@@ -136,9 +137,10 @@ def generate_report(args, settings):
         report_series['total_nonrrsp']=report_series['margin'].add(report_series['tfsa'])
         report=pd.DataFrame(report_series)
         totals_by_account=pd.DataFrame([['TOTAL']+[series.sum() for label,series in report.items() if label!='name']],
-                                       columns=investment_data[args.type].columns[:-1])
+                                       columns=investment_data[args.type].columns[:-2])
         report=pd.concat([report,totals_by_account],ignore_index=True)
-        report['TOTAL']=report['resp'].add(report['total_rrsp']).add(report['total_nonrrsp'])
+        report['monthly_total']=report['resp'].add(report['total_rrsp']).add(report['total_nonrrsp'])
+        report['yearly_total']=report['monthly_total'].mul(12)
     print(report.to_string(index=False, show_dimensions=True,float_format=lambda x: '$%.2f'%x))
     if args.format=='csv':
         fname=investment_data[args.type].filename
