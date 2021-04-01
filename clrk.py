@@ -173,11 +173,26 @@ def append_csv(data_type, df_to_append):
     combined_df.to_csv(investment_data[data_type].filename, index=False)
 
 def buy_sell_asset(args, settings):
-    investment_data_type='transactions'
-    total_cost=round((args.units*args.price)+args.fees,2)
-    df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,args.units,round(args.price,2),round(args.fees,2),total_cost]],
-                    columns=investment_data[investment_data_type].columns)
-    append_csv(investment_data_type, df)
+    assets=pd.read_csv(investment_data['assets'].filename, index_col=0)
+    try:
+        current_units=assets.loc[args.name,args.account]
+        if args.type=='buy':
+            updated_units=current_units+args.units
+        else:
+            updated_units=current_units-args.units
+        if updated_units>=0:
+            print(f'{args.type} {args.units} units of {args.name} yielding {updated_units} units from {current_units} units')
+            assets.loc[args.name,args.account]=updated_units
+            assets.to_csv(investment_data['assets'].filename)
+            investment_data_type='transactions'
+            total_cost=round((args.units*args.price)+args.fees,2)
+            df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,args.units,round(args.price,2),round(args.fees,2),total_cost]],
+                            columns=investment_data[investment_data_type].columns)
+            append_csv(investment_data_type, df)
+        else:
+            print(f'ERROR: Trying to sell more units ("{args.units}") than exist ("{current_units}")')
+    except KeyError:
+        print(f'ERROR: "{args.name}" does not exist. Create asset before executing transaction.')
     return settings
 
 def income_received(args, settings):
