@@ -19,7 +19,7 @@ InvestmentDataDetails=namedtuple('InvestmentDataDetails', ['filename','columns',
 AccountTypes=['sdrsp','locked_sdrsp','margin','tfsa','resp']
 ReportTypes=['monthly_income','tfsa_summary']
 ReportFormats=['csv']
-TransactionTypes=['buy','sell']
+TransactionTypes=['buy','sell','xfer']
 
 investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
                                                  columns=['name','market','type','subtype','income_per_unit_period','sdrsp','locked_sdrsp','margin','tfsa','resp','income_freq_months','income_first_month','income_day_of_month'],
@@ -37,7 +37,7 @@ investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
                                                        columns=['amount','num_transactions'],
                                                        description='summarization of tfsa transactions'),
                  'transactions': InvestmentDataDetails(filename=Path('transactions.csv'),
-                                                       columns=['date','type','name','account','units','unit_price','fees','total_cost'],
+                                                       columns=['date','type','name','account','xfer_account','units','unit_price','fees','total_cost'],
                                                        description='record of all asset transactions'),
 }
 
@@ -58,30 +58,33 @@ def build_cmdline_parser():
     clp_command_list.add_argument('--filter',
                                   help="e.g. ((df['name']=='TD')|(df['name']=='ENB'))&(~(df['account']=='margin'))")
 
-    clp_command_buy = clp_commands.add_parser('transact',
-                                               help='buy or sell assets')
-    clp_command_buy.add_argument('type',
-                                  choices=TransactionTypes,
-                                  help='type of transaction: buy or sell')
-    clp_command_buy.add_argument('account',
-                                  choices=AccountTypes,
-                                  help='account in which transaction was executed')
-    clp_command_buy.add_argument('name',
-                                  help='name of asset being transacted')
-    clp_command_buy.add_argument('units',
-                                  type=int,
-                                  help='number of units bought or sold')
-    clp_command_buy.add_argument('price',
-                                  type=float,
-                                  help='price of units bought or sold (e.g. "9.99")')
-    clp_command_buy.add_argument('--date',
-                                  type=date.fromisoformat,
-                                  default=date.today(),
-                                  help='transaction date (e.g. "2021-03-31")')
-    clp_command_buy.add_argument('--fees',
-                                  type=float,
-                                  default=9.99,
-                                  help='total transaction fees (e.g. "9.99")')
+    clp_command_transact = clp_commands.add_parser('transact',
+                                                   help='perform a transaction on an asset')
+    clp_command_transact.add_argument('type',
+                                      choices=TransactionTypes,
+                                      help='type of transaction')
+    clp_command_transact.add_argument('account',
+                                      choices=AccountTypes,
+                                      help='account in which transaction was executed')
+    clp_command_transact.add_argument('--xfer_account',
+                                      choices=AccountTypes,
+                                      help='the target account of a xfer transaction')
+    clp_command_transact.add_argument('name',
+                                      help='name of asset being transacted')
+    clp_command_transact.add_argument('units',
+                                      type=int,
+                                      help='number of units participating in transaction')
+    clp_command_transact.add_argument('price',
+                                      type=float,
+                                      help='price of units transacted (e.g. "9.99")')
+    clp_command_transact.add_argument('--date',
+                                      type=date.fromisoformat,
+                                      default=date.today(),
+                                      help='transaction date (e.g. "2021-03-31")')
+    clp_command_transact.add_argument('--fees',
+                                      type=float,
+                                      default=9.99,
+                                      help='total transaction fees (e.g. "9.99")')
 
     clp_command_income = clp_commands.add_parser('income',
                                                help='add income payments')
@@ -170,7 +173,7 @@ def list_data(args, settings):
     if args.filter:
         filter=eval(args.filter)
         df=df[filter]
-    print(df.to_string(index=False, show_dimensions=True,float_format=lambda x: '$%.2f'%x))
+    print(df.to_string(index=False, na_rep='', show_dimensions=True,float_format=lambda x: '$%.2f'%x))
     return settings
 
 def append_csv(data_type, df_to_append):
@@ -182,27 +185,48 @@ def append_csv(data_type, df_to_append):
     print(combined_df.to_string(index=False, show_dimensions=True),'\n')
     combined_df.to_csv(investment_data[data_type].filename, index=False)
 
-def buy_sell_asset(args, settings):
+def asset_transactions(args, settings):
+    if args.type=='xfer' and not args.xfer_account:
+        print(f'ERROR: A xfer transaction requires a xfer_account ("--xfer_account").')
+        return settings
     assets=pd.read_csv(investment_data['assets'].filename, index_col=0)
+    current_xfer_acct_units=0
     try:
-        current_units=assets.loc[args.name,args.account]
-        if args.type=='buy':
-            updated_units=current_units+args.units
-        else:
-            updated_units=current_units-args.units
-        if updated_units>=0:
-            print(f'{args.type} {args.units} units of {args.name} yielding {updated_units} units from {current_units} units')
-            assets.loc[args.name,args.account]=updated_units
-            assets.to_csv(investment_data['assets'].filename)
-            investment_data_type='transactions'
-            total_cost=round((args.units*args.price)+args.fees,2)
-            df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,args.units,round(args.price,2),round(args.fees,2),total_cost]],
-                            columns=investment_data[investment_data_type].columns)
-            append_csv(investment_data_type, df)
-        else:
-            print(f'ERROR: Trying to sell more units ("{args.units}") than exist ("{current_units}")')
+        current_acct_units=assets.loc[args.name,args.account]
+        if args.xfer_account:
+            current_xfer_acct_units=assets.loc[args.name,args.xfer_account]
     except KeyError:
         print(f'ERROR: "{args.name}" does not exist. Create asset before executing transaction.')
+        return settings
+
+    if args.type=='buy':
+        updated_acct_units=current_acct_units+args.units
+    if args.type=='sell' or args.type=='xfer':
+        updated_acct_units=current_acct_units-args.units
+    if args.type=='xfer':
+        updated_xfer_acct_units=current_xfer_acct_units+args.units
+    if updated_acct_units>=0:
+        print()
+        if args.type=='xfer':
+            print(f'Transferring {args.units} units of {args.name} from {args.account} to {args.xfer_account} accounts yields:')
+            print(f'  {args.account:12}: {current_acct_units:8} ▶︎ {updated_acct_units:8} units')
+            print(f'  {args.xfer_account:12}: {current_xfer_acct_units:8} ▶︎ {updated_xfer_acct_units:8} units')
+        else:
+            print(f'{args.type} {args.units} units of {args.name} for {args.account} yields {updated_acct_units} units from {current_acct_units} units')
+    else:
+        print(f'ERROR: Trying to {args.type} more units ("{args.units}") than exist ("{current_acct_units}") in account "{args.account}"')
+
+    assets.loc[args.name,args.account]=updated_acct_units
+    if args.type=='xfer':
+        assets.loc[args.name,args.xfer_account]=updated_xfer_acct_units
+    print('\n',assets.to_string(show_dimensions=True),'\n')
+    assets.to_csv(investment_data['assets'].filename)
+    investment_data_type='transactions'
+    total_cost=round((args.units*args.price)+args.fees,2)
+    xfer_acct=args.xfer_account if args.xfer_account else ''
+    df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,xfer_acct,args.units,round(args.price,2),round(args.fees,2),total_cost]],
+                    columns=investment_data[investment_data_type].columns)
+    append_csv(investment_data_type, df)
     return settings
 
 def income_received(args, settings):
@@ -291,7 +315,7 @@ def datapath(args, settings):
     return Settings(verbosity=settings.verbosity,
                     datapath=Path(new_datapath))
 
-dispatch={'transact': buy_sell_asset,
+dispatch={'transact': asset_transactions,
           'datapath': datapath,
           'verbosity': verbosity,
           'list': list_data,
