@@ -30,11 +30,8 @@ investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
                  'monthly_income': InvestmentDataDetails(filename=Path('income_monthly.csv'),
                                                          columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp','total_rrsp','total_nonrrsp','monthly_total','yearly_total'],
                                                          description='monthly income by account, including overall & RRSP and non-registered totals'),
-                 'tfsa_transactions': InvestmentDataDetails(filename=Path('tfsa_transactions.csv'),
-                                                            columns=['date','amount','type'],
-                                                            description='list of TFSA transactions'),
                  'tfsa_summary': InvestmentDataDetails(filename=Path('tfsa_summary.csv'),
-                                                       columns=['amount','num_transactions'],
+                                                       columns=['num_transactions','total'],
                                                        description='summarization of tfsa transactions'),
                  'transactions': InvestmentDataDetails(filename=Path('transactions.csv'),
                                                        columns=['date','type','name','account','xfer_account','units','unit_amount','fees','total'],
@@ -154,10 +151,16 @@ def generate_report(args, settings):
         report=pd.concat([report,monthly_totals],ignore_index=True)
         report.at[report.shape[0]-1,'yearly_total']=0
     elif args.type=='tfsa_summary':
-        tfsa=pd.read_csv(investment_data['tfsa_transactions'].filename)
-        report=tfsa.groupby(['type']).sum()
-        report['num_transactions']=tfsa.groupby(['type']).size()
-        print(f"\nTotal Contribution Room = ${report['amount']['annual_contribution_limit']-report['amount']['contribution']:,.2f}\n")
+        trans=pd.read_csv(investment_data['transactions'].filename)
+        tfsa_trans=trans[((trans['type'].isin(['cont','cont_limit'])) & (trans['account']=='tfsa')) | (trans['xfer_account']=='tfsa')]
+        pd.set_option('mode.chained_assignment',None)
+        tfsa_xfer_trans=tfsa_trans['type']=='xfer'
+        tfsa_trans.loc[tfsa_xfer_trans,['type']]='xfer_in'
+        pd.set_option('mode.chained_assignment','warn')
+        report=tfsa_trans.groupby(['type']).sum()
+        report['num_transactions']=tfsa_trans.groupby(['type']).size()
+        report=report[['num_transactions','total']]
+        print(f"\nTotal Contribution Room = ${report['total']['cont_limit']-report['total']['cont']-report['total']['xfer_in']:,.2f}\n")
         output_index=True
     print(report.to_string(index=output_index, show_dimensions=True,float_format=lambda x: '$%.2f'%x))
     if args.format=='csv':
