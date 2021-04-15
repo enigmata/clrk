@@ -80,24 +80,6 @@ def build_cmdline_parser():
                                       default=0.00,
                                       help='total transaction fees (default: "0.00")')
 
-    clp_command_income = clp_commands.add_parser('income',
-                                               help='add income payments')
-    clp_command_income.add_argument('name',
-                                  help='name of asset for which income is received')
-    clp_command_income.add_argument('account',
-                                  choices=AccountTypes,
-                                  help='account in which income was deposited')
-    clp_command_income.add_argument('units',
-                                  type=int,
-                                  help='number of units of income paid')
-    clp_command_income.add_argument('income',
-                                  type=float,
-                                  help='total income received')
-    clp_command_income.add_argument('--date',
-                                  type=date.fromisoformat,
-                                  default=date.today(),
-                                  help='date income received (e.g. "2021-03-31")')
-
     clp_command_report = clp_commands.add_parser('report',
                                                   help='generate a report on investment data')
     clp_command_report.add_argument('type',
@@ -124,6 +106,14 @@ def build_cmdline_parser():
     clp_commands.add_parser('quit', help='exit the command-line tool')
 
     return clp_parser
+
+def write_data_file(file_type, df, data_type, output_index):
+    if file_type=='csv':
+        fname=investment_data[data_type].filename
+        fname_ts=fname.with_stem(fname.stem+'_'+strftime("%Y-%m-%d-%H_%M_%S",localtime()))
+        df.to_csv(fname_ts, index=output_index)
+        df.to_csv(fname, index=output_index)
+        print(f'Data written to "{fname_ts}", and "{fname}" updated accordingly')
 
 def generate_report(args, settings):
     print(f'Generating the {args.type} report in the {args.format} format ...\n')
@@ -160,12 +150,7 @@ def generate_report(args, settings):
         print(f"\nTotal Contribution Room = ${report['total']['cont_limit']-report['total']['cont']-report['total']['xfer_in']:,.2f}\n")
         output_index=True
     print(report.to_string(index=output_index, show_dimensions=True,float_format=lambda x: '$%.2f'%x))
-    if args.format=='csv':
-        fname=investment_data[args.type].filename
-        fname_ts=fname.with_stem(fname.stem+'_'+strftime("%Y-%m-%d-%H_%M_%S",localtime()))
-        report.to_csv(fname_ts, index=output_index)
-        report.to_csv(fname, index=output_index)
-        print(f'Report written to "{fname_ts}", and "{fname}" updated accordingly')
+    write_data_file(args.format, report, args.type, output_index)
     return settings
 
 def list_data(args, settings):
@@ -187,7 +172,7 @@ def append_csv(data_type, df_to_append):
     combined_df=pd.concat([csv_file_df, df_to_append])
     print(f'\n{data_type} data appended and written to file:\n')
     print(combined_df.to_string(index=False, na_rep='', show_dimensions=True,float_format=lambda x: '$%.2f'%x),'\n')
-    combined_df.to_csv(investment_data[data_type].filename, index=False)
+    write_data_file('csv', combined_df, data_type, False)
 
 def buy_sell_transaction(args):
     assets=pd.read_csv(investment_data['assets'].filename, index_col=0)
@@ -208,7 +193,7 @@ def buy_sell_transaction(args):
 
     assets.loc[args.name,args.account]=updated_acct_units
     print('\n',assets.to_string(show_dimensions=True),'\n')
-    assets.to_csv(investment_data['assets'].filename)
+    write_data_file('csv', assets, 'assets', True)
     total_cost=round((args.units*args.amount)+args.fees,2)
     df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,'',args.units,round(args.amount,2),round(args.fees,2),total_cost]],
                     columns=investment_data['transactions'].columns)
@@ -226,7 +211,7 @@ def dividend_transaction(args):
     if dividend!=args.amount:
         assets.loc[args.name,'income_per_unit_period']=args.amount
         print(f'\nDividend has changed from {dividend} to {args.amount}\n')
-        assets.to_csv(investment_data['assets'].filename)
+        write_data_file('csv', assets, 'assets', True)
 
     total_dividend=round((args.units*args.amount)-args.fees,2)
     df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,'',args.units,args.amount,round(args.fees,2),total_dividend]],
@@ -258,7 +243,7 @@ def xfer_transaction(args):
     assets.loc[args.name,args.account]=updated_acct_units
     assets.loc[args.name,args.xfer_account]=updated_xfer_acct_units
     print('\n',assets.to_string(show_dimensions=True),'\n')
-    assets.to_csv(investment_data['assets'].filename)
+    write_data_file('csv', assets, 'assets', True)
     total_cost=round((args.units*args.amount)+args.fees,2)
     df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,args.xfer_account,args.units,round(args.amount,2),round(args.fees,2),total_cost]],
                     columns=investment_data['transactions'].columns)
@@ -291,13 +276,6 @@ process_transaction={'buy': buy_sell_transaction,
 def asset_transactions(args, settings):
     if not process_transaction[args.type](args):
         print(f'ERROR: {args.type} transaction was not successful.')
-    return settings
-
-def income_received(args, settings):
-    investment_data_type='income'
-    df=pd.DataFrame([[args.name,args.date.strftime("%Y-%m-%d"),args.account,args.units,round(args.income,2)]],
-                    columns=investment_data[investment_data_type].columns)
-    append_csv(investment_data_type, df)
     return settings
 
 def verbosity(args, settings):
@@ -383,7 +361,6 @@ dispatch={'transact': asset_transactions,
           'datapath': datapath,
           'verbosity': verbosity,
           'list': list_data,
-          'income': income_received,
           'report': generate_report,
          }
 
