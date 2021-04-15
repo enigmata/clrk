@@ -19,7 +19,7 @@ InvestmentDataDetails=namedtuple('InvestmentDataDetails', ['filename','columns',
 AccountTypes=['sdrsp','locked_sdrsp','margin','tfsa','resp']
 ReportTypes=['monthly_income','tfsa_summary']
 ReportFormats=['csv']
-TransactionTypes=['buy','sell','xfer','cont','cont_limit']
+TransactionTypes=['buy','sell','xfer','cont','cont_limit','div']
 
 investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
                                                  columns=['name','market','type','subtype','income_per_unit_period','sdrsp','locked_sdrsp','margin','tfsa','resp','income_freq_months','income_first_month','income_day_of_month'],
@@ -73,7 +73,7 @@ def build_cmdline_parser():
                                       help='number of units participating in transaction')
     clp_command_transact.add_argument('amount',
                                       type=float,
-                                      help='cost of a stock unit or contribution amount per unit')
+                                      help='price of a stock unit, dividend per unit, or contribution amount per unit')
     clp_command_transact.add_argument('--date',
                                       type=date.fromisoformat,
                                       default=date.today(),
@@ -176,7 +176,11 @@ def list_data(args, settings):
     if args.filter:
         filter=eval(args.filter)
         df=df[filter]
-    print(df.to_string(index=False, na_rep='', show_dimensions=True,float_format=lambda x: '$%.2f'%x))
+    if args.list=='assets':
+        float_format=lambda x: '$%.5f'%x
+    else:
+        float_format=lambda x: '$%.2f'%x
+    print(df.to_string(index=False, na_rep='', show_dimensions=True,float_format=float_format))
     return settings
 
 def append_csv(data_type, df_to_append):
@@ -210,6 +214,25 @@ def buy_sell_transaction(args):
     assets.to_csv(investment_data['assets'].filename)
     total_cost=round((args.units*args.amount)+args.fees,2)
     df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,'',args.units,round(args.amount,2),round(args.fees,2),total_cost]],
+                    columns=investment_data['transactions'].columns)
+    append_csv('transactions', df)
+    return True
+
+def dividend_transaction(args):
+    assets=pd.read_csv(investment_data['assets'].filename, index_col=0)
+    try:
+        dividend=assets.loc[args.name,'income_per_unit_period']
+    except KeyError:
+        print(f'ERROR: "{args.name}" does not exist. Create asset before executing transaction.')
+        return False
+
+    if dividend!=args.amount:
+        assets.loc[args.name,'income_per_unit_period']=args.amount
+        print(f'\nDividend has changed from {dividend} to {args.amount}\n')
+        assets.to_csv(investment_data['assets'].filename)
+
+    total_dividend=round((args.units*args.amount)-args.fees,2)
+    df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,'',args.units,args.amount,round(args.fees,2),total_dividend]],
                     columns=investment_data['transactions'].columns)
     append_csv('transactions', df)
     return True
@@ -265,6 +288,7 @@ process_transaction={'buy': buy_sell_transaction,
                      'xfer': xfer_transaction,
                      'cont': contribute_transaction,
                      'cont_limit': contribute_transaction,
+                     'div': dividend_transaction,
                     }
 
 def asset_transactions(args, settings):
