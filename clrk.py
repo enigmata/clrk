@@ -115,40 +115,50 @@ def write_data_file(file_type, df, data_type, output_index):
         df.to_csv(fname, index=output_index)
         print(f'Data written to "{fname_ts}", and "{fname}" updated accordingly')
 
-def generate_report(args, settings):
-    print(f'Generating the {args.type} report in the {args.format} format ...\n')
+def gen_report_monthly_income():
     report=pd.DataFrame()
     output_index=False
-    if args.type=='monthly_income':
-        assets=pd.read_csv(investment_data['assets'].filename)
-        report_series={'name': assets['name']}
-        for account in AccountTypes:
-            report_series[account]=assets[account].mul(assets['income_per_unit_period']).divide(assets['income_freq_months'])
-        report_series['total_rrsp']=report_series['sdrsp'].add(report_series['locked_sdrsp'])
-        report_series['total_nonrrsp']=report_series['margin'].add(report_series['tfsa'])
-        report=pd.DataFrame(report_series)
-        monthly_by_account=pd.DataFrame([['TOTAL MONTHLY']+[series.sum() for label,series in report.items() if label!='name']],
-                                         columns=investment_data[args.type].columns[:-2])
-        report=pd.concat([report,monthly_by_account],ignore_index=True)
-        report['monthly_total']=report['resp'].add(report['total_rrsp']).add(report['total_nonrrsp'])
-        monthly_totals=report[report['name']=='TOTAL MONTHLY']
-        report['yearly_total']=report['monthly_total'].mul(12)
-        monthly_totals=pd.DataFrame([['TOTAL YEARLY']+[series.sum()*12 for label,series in monthly_totals.items() if label!='name' and label!='yearly_total']],
-                                       columns=investment_data[args.type].columns[:-1])
-        report=pd.concat([report,monthly_totals],ignore_index=True)
-        report.at[report.shape[0]-1,'yearly_total']=0
-    elif args.type=='tfsa_summary':
-        trans=pd.read_csv(investment_data['transactions'].filename)
-        tfsa_trans=trans[((trans['type'].isin(['cont','cont_limit'])) & (trans['account']=='tfsa')) | (trans['xfer_account']=='tfsa')]
-        pd.set_option('mode.chained_assignment',None)
-        tfsa_xfer_trans=tfsa_trans['type']=='xfer'
-        tfsa_trans.loc[tfsa_xfer_trans,['type']]='xfer_in'
-        pd.set_option('mode.chained_assignment','warn')
-        report=tfsa_trans.groupby(['type']).sum()
-        report['num_transactions']=tfsa_trans.groupby(['type']).size()
-        report=report[['num_transactions','total']]
-        print(f"\nTotal Contribution Room = ${report['total']['cont_limit']-report['total']['cont']-report['total']['xfer_in']:,.2f}\n")
-        output_index=True
+    assets=pd.read_csv(investment_data['assets'].filename)
+    report_series={'name': assets['name']}
+    for account in AccountTypes:
+        report_series[account]=assets[account].mul(assets['income_per_unit_period']).divide(assets['income_freq_months'])
+    report_series['total_rrsp']=report_series['sdrsp'].add(report_series['locked_sdrsp'])
+    report_series['total_nonrrsp']=report_series['margin'].add(report_series['tfsa'])
+    report=pd.DataFrame(report_series)
+    monthly_by_account=pd.DataFrame([['TOTAL MONTHLY']+[series.sum() for label,series in report.items() if label!='name']],
+                                     columns=investment_data['monthly_income'].columns[:-2])
+    report=pd.concat([report,monthly_by_account],ignore_index=True)
+    report['monthly_total']=report['resp'].add(report['total_rrsp']).add(report['total_nonrrsp'])
+    monthly_totals=report[report['name']=='TOTAL MONTHLY']
+    report['yearly_total']=report['monthly_total'].mul(12)
+    monthly_totals=pd.DataFrame([['TOTAL YEARLY']+[series.sum()*12 for label,series in monthly_totals.items() if label!='name' and label!='yearly_total']],
+                                   columns=investment_data['monthly_income'].columns[:-1])
+    report=pd.concat([report,monthly_totals],ignore_index=True)
+    report.at[report.shape[0]-1,'yearly_total']=0
+    return report, output_index
+
+def gen_report_tfsa_summary():
+    report=pd.DataFrame()
+    output_index=True
+    trans=pd.read_csv(investment_data['transactions'].filename)
+    tfsa_trans=trans[((trans['type'].isin(['cont','cont_limit'])) & (trans['account']=='tfsa')) | (trans['xfer_account']=='tfsa')]
+    pd.set_option('mode.chained_assignment',None)
+    tfsa_xfer_trans=tfsa_trans['type']=='xfer'
+    tfsa_trans.loc[tfsa_xfer_trans,['type']]='xfer_in'
+    pd.set_option('mode.chained_assignment','warn')
+    report=tfsa_trans.groupby(['type']).sum()
+    report['num_transactions']=tfsa_trans.groupby(['type']).size()
+    report=report[['num_transactions','total']]
+    print(f"\nTotal Contribution Room = ${report['total']['cont_limit']-report['total']['cont']-report['total']['xfer_in']:,.2f}\n")
+    return report, output_index
+
+gen_report={'monthly_income': gen_report_monthly_income,
+            'tfsa_summary': gen_report_tfsa_summary,
+           }
+
+def generate_report(args, settings):
+    print(f'Generating the {args.type} report in the {args.format} format ...\n')
+    report, output_index=gen_report[args.type]()
     print(report.to_string(index=output_index, show_dimensions=True,float_format=lambda x: '$%.2f'%x))
     write_data_file(args.format, report, args.type, output_index)
     return settings
