@@ -28,7 +28,7 @@ investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
                                                          columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp','total_rrsp','total_nonrrsp','monthly_total','yearly_total'],
                                                          description='monthly income by account, including overall & RRSP and non-registered totals'),
                  'tfsa_summary': InvestmentDataDetails(filename=Path('tfsa_summary.csv'),
-                                                       columns=['num_transactions','total'],
+                                                       columns=['num','total'],
                                                        description='summarization of tfsa transactions'),
                  'transactions': InvestmentDataDetails(filename=Path('transactions.csv'),
                                                        columns=['date','type','name','account','xfer_account','units','unit_amount','fees','total'],
@@ -147,9 +147,12 @@ def gen_report_tfsa_summary():
     tfsa_trans.loc[tfsa_xfer_trans,['type']]='xfer_in'
     pd.set_option('mode.chained_assignment','warn')
     report=tfsa_trans.groupby(['type']).sum()
-    report['num_transactions']=tfsa_trans.groupby(['type']).size()
-    report=report[['num_transactions','total']]
+    report['num']=tfsa_trans.groupby(['type']).size()
+    report=report[['num','total']]
     print(f"\nTotal Contribution Room = ${report['total']['cont_limit']-report['total']['cont']-report['total']['xfer_in']:,.2f}\n")
+    contrib_room=pd.DataFrame({'num':1, 'total':report['total']['cont_limit']-report['total']['cont']-report['total']['xfer_in']},
+                               index=pd.Series(data={'type':'cont_room'},index=['type'],name='type'))
+    report=pd.concat([report,contrib_room])
     return report, output_index
 
 gen_report={'monthly_income': gen_report_monthly_income,
