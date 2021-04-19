@@ -19,7 +19,7 @@ InvestmentDataDetails=namedtuple('InvestmentDataDetails', ['filename','columns',
 AccountTypes=['sdrsp','locked_sdrsp','margin','tfsa','resp']
 ReportTypes=['monthly_income','tfsa_summary']
 ReportFormats=['csv']
-TransactionTypes=['buy','sell','xfer','cont','cont_limit','div']
+TransactionTypes=['buy','sell','xfer','cont','cont_limit','div','withdraw']
 
 investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
                                                  columns=['name','market','type','subtype','income_per_unit_period','sdrsp','locked_sdrsp','margin','tfsa','resp','income_freq_months','income_first_month','income_day_of_month'],
@@ -141,7 +141,7 @@ def gen_report_tfsa_summary():
     report=pd.DataFrame()
     output_index=True
     trans=pd.read_csv(investment_data['transactions'].filename)
-    tfsa_trans=trans[((trans['type'].isin(['cont','cont_limit'])) & (trans['account']=='tfsa')) | (trans['xfer_account']=='tfsa')]
+    tfsa_trans=trans[((trans['type'].isin(['cont','cont_limit','withdraw'])) & (trans['account']=='tfsa')) | (trans['xfer_account']=='tfsa')]
     pd.set_option('mode.chained_assignment',None)
     tfsa_xfer_trans=tfsa_trans['type']=='xfer'
     tfsa_trans.loc[tfsa_xfer_trans,['type']]='xfer_in'
@@ -149,9 +149,25 @@ def gen_report_tfsa_summary():
     report=tfsa_trans.groupby(['type']).sum()
     report['num']=tfsa_trans.groupby(['type']).size()
     report=report[['num','total']]
-    print(f"\nTotal Contribution Room = ${report['total']['cont_limit']-report['total']['cont']-report['total']['xfer_in']:,.2f}\n")
-    contrib_room=pd.DataFrame({'num':1, 'total':report['total']['cont_limit']-report['total']['cont']-report['total']['xfer_in']},
-                               index=pd.Series(data={'type':'cont_room'},index=['type'],name='type'))
+    try:
+        cont_limit_sum=report['total']['cont_limit']
+    except KeyError:
+        cont_limit_sum=0.0
+    try:
+        withdraw_sum=report['total']['withdraw']
+    except KeyError:
+        withdraw_sum=0.0
+    try:
+        cont_sum=report['total']['cont']
+    except KeyError:
+        cont_sum=0.0
+    try:
+        xfer_in_sum=report['total']['xfer_in']
+    except KeyError:
+        xfer_in_sum=0.0
+    cont_room=cont_limit_sum+withdraw_sum-cont_sum-xfer_in_sum
+    print(f"\nTotal Contribution Room = ${cont_room:,.2f} (cont_limit + withdraw - cont - xfer_in\n")
+    contrib_room=pd.DataFrame({'num':1, 'total':cont_room}, index=pd.Series(data={'type':'cont_room'},index=['type'],name='type'))
     report=pd.concat([report,contrib_room])
     return report, output_index
 
@@ -278,12 +294,25 @@ def contribute_transaction(args):
     append_csv('transactions', df)
     return True
 
+def withdrawal_transaction(args):
+    if args.amount<=0.0:
+        print(f'ERROR: Must withdraw more than $0 "--amount=={args.amount} > 0.00"')
+        return False
+    if args.type=='withdraw' and args.name!='cash':
+        print(f'ERROR: Cash withdrawal only (i.e. "--name==cash")')
+        return False
+    df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,'',args.units,round(args.amount,2),round(args.fees,2),round(args.units*args.amount,2)]],
+                    columns=investment_data['transactions'].columns)
+    append_csv('transactions', df)
+    return True
+
 process_transaction={'buy': buy_sell_transaction,
                      'sell': buy_sell_transaction,
                      'xfer': xfer_transaction,
                      'cont': contribute_transaction,
                      'cont_limit': contribute_transaction,
                      'div': dividend_transaction,
+                     'withdraw': withdrawal_transaction,
                     }
 
 def asset_transactions(args, settings):
