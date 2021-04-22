@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import math
 import pandas as pd
 import sys
 
@@ -17,7 +18,7 @@ class Verbosity(Enum):
 Settings=namedtuple('Settings', ['datapath','verbosity'])
 InvestmentDataDetails=namedtuple('InvestmentDataDetails', ['filename','columns','description'])
 AccountTypes=['sdrsp','locked_sdrsp','margin','tfsa','resp']
-ReportTypes=['monthly_income','tfsa_summary']
+ReportTypes=['monthly_income','monthly_income_actual','tfsa_summary']
 ReportFormats=['csv']
 TransactionTypes=['buy','sell','xfer','cont','cont_limit','div','withdraw']
 
@@ -26,7 +27,10 @@ investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
                                                  description='ledger of owned financial instruments'),
                  'monthly_income': InvestmentDataDetails(filename=Path('income_monthly.csv'),
                                                          columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp','total_rrsp','total_nonrrsp','monthly_total','yearly_total'],
-                                                         description='monthly income by account, including overall & RRSP and non-registered totals'),
+                                                         description='projected monthly income by account, including overall & RRSP and non-registered totals'),
+                 'monthly_income_actual': InvestmentDataDetails(filename=Path('income_monthly_actual.csv'),
+                                                                columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp','total_rrsp','total_nonrrsp','monthly_total','yearly_total'],
+                                                                description='actual monthly income by account, including overall & RRSP and non-registered totals'),
                  'tfsa_summary': InvestmentDataDetails(filename=Path('tfsa_summary.csv'),
                                                        columns=['num','total'],
                                                        description='summarization of tfsa transactions'),
@@ -137,6 +141,42 @@ def gen_report_monthly_income():
     report.at[report.shape[0]-1,'yearly_total']=0
     return report, output_index
 
+def gen_report_monthly_income_actual():
+    report=pd.DataFrame()
+    output_index=True
+    assets=pd.read_csv(investment_data['assets'].filename, index_col=0)
+    trans=pd.read_csv(investment_data['transactions'].filename, index_col=0)
+    div_trans=trans[trans['type']=='div']
+    asset_index=[]
+    income={col: [] for col in investment_data['monthly_income_actual'].columns[1:]}
+    for i, (n,a) in enumerate(assets.iterrows()):
+        asset_index.append(n)
+        income_freq=a['income_freq_months']
+        for acct in AccountTypes:
+            if a[acct]>0:
+                acct_divs=div_trans[(div_trans['name']==n)&(div_trans['account']==acct)].sort_values('date')
+                try:
+                    div_income=acct_divs['total'][acct_divs.last_valid_index()]
+                except KeyError:
+                    div_income=0.0
+            else:
+                div_income=0.0
+            income[acct].append(div_income/income_freq)
+        income['total_rrsp'].append(income['sdrsp'][i]+income['locked_sdrsp'][i])
+        income['total_nonrrsp'].append(income['margin'][i]+income['tfsa'][i])
+        income['monthly_total'].append(income['total_rrsp'][i]+income['total_nonrrsp'][i]+income['resp'][i])
+        income['yearly_total'].append(income['monthly_total'][i]*12)
+
+    asset_index.extend(['TOTAL_MONTHLY','TOTAL_YEARLY'])
+    for col in income:
+        monthly_total=math.fsum(income[col])
+        income[col].append(monthly_total)
+        income[col].append(monthly_total*12)
+    income['yearly_total'][len(asset_index)-1]=0.0
+    index_df=pd.Series(data=asset_index,name='name')
+    report=pd.DataFrame(data=income,index=index_df)
+    return report, output_index
+
 def gen_report_tfsa_summary():
     report=pd.DataFrame()
     output_index=True
@@ -172,6 +212,7 @@ def gen_report_tfsa_summary():
     return report, output_index
 
 gen_report={'monthly_income': gen_report_monthly_income,
+            'monthly_income_actual': gen_report_monthly_income_actual,
             'tfsa_summary': gen_report_tfsa_summary,
            }
 
