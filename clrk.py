@@ -18,7 +18,7 @@ class Verbosity(Enum):
 Settings=namedtuple('Settings', ['datapath','verbosity'])
 InvestmentDataDetails=namedtuple('InvestmentDataDetails', ['filename','columns','description'])
 AccountTypes=['sdrsp','locked_sdrsp','margin','tfsa','resp']
-ReportTypes=['monthly_income','monthly_income_actual','tfsa_summary']
+ReportTypes=['monthly_income','monthly_income_actual','monthly_income_schedule','tfsa_summary']
 ReportFormats=['csv']
 TransactionTypes=['buy','sell','xfer','cont','cont_limit','div','withdraw']
 
@@ -28,6 +28,9 @@ investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
                  'monthly_income': InvestmentDataDetails(filename=Path('income_monthly.csv'),
                                                          columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp','total_rrsp','total_nonrrsp','monthly_total','yearly_total'],
                                                          description='projected monthly income by account, including overall & RRSP and non-registered totals'),
+                 'monthly_income_schedule': InvestmentDataDetails(filename=Path('income_monthly_sched.csv'),
+                                                                  columns=['name','jan_rrsp','jan_nonrrsp','feb_rrsp','feb_nonrrsp','mar_rrsp','mar_nonrrsp','apr_rrsp','apr_nonrrsp','may_rrsp','may_nonrrsp','jun_rrsp','jun_nonrrsp','jul_rrsp','jul_nonrrsp','aug_rrsp','aug_nonrrsp','sep_rrsp','sep_nonrrsp','oct_rrsp','oct_nonrrsp','nov_rrsp','nov_nonrrsp','dec_rrsp','dec_nonrrsp'],
+                                                                  description='projected monthly income schedule'),
                  'monthly_income_actual': InvestmentDataDetails(filename=Path('income_monthly_actual.csv'),
                                                                 columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp','total_rrsp','total_nonrrsp','monthly_total','yearly_total'],
                                                                 description='actual monthly income by account, including overall & RRSP and non-registered totals'),
@@ -141,6 +144,36 @@ def gen_report_monthly_income():
     report.at[report.shape[0]-1,'yearly_total']=0
     return report, output_index
 
+def gen_report_monthly_income_sched():
+    report=pd.DataFrame()
+    output_index=True
+    assets=pd.read_csv(investment_data['assets'].filename, index_col=0)
+    income={}
+    for account in AccountTypes:
+        income[account]=assets[account].mul(assets['income_per_unit_period'])
+    income['rrsp']=income['sdrsp'].add(income['locked_sdrsp'])
+    income['nonrrsp']=income['margin'].add(income['tfsa'])
+    for account in AccountTypes:
+        del income[account] 
+    sched={col: [] for col in investment_data['monthly_income_schedule'].columns[1:]}
+    for row, (name, details) in enumerate(assets.iterrows()):
+        freq=details['income_freq_months']
+        starting_month=details['income_first_month']
+        for month in range(1,13):
+            if month>=starting_month:
+                inc_rrsp=income['rrsp'][row] if ((month-starting_month)%freq==0) else 0.0
+                inc_nonrrsp=income['nonrrsp'][row] if ((month-starting_month)%freq==0) else 0.0
+            else:
+                inc_rrsp=inc_nonrrsp=0.0
+            sched[investment_data['monthly_income_schedule'].columns[month*2-1]].append(inc_rrsp)
+            sched[investment_data['monthly_income_schedule'].columns[month*2]].append(inc_nonrrsp)
+    report=pd.DataFrame(data=sched,index=assets.index)
+    monthly_totals=pd.DataFrame([[series.sum() for label,series in report.items()]],
+                                columns=investment_data['monthly_income_schedule'].columns[1:],
+                                index=pd.Series(data={name:'TOTAL'},name='name'))
+    report=pd.concat([report,monthly_totals])
+    return report, output_index
+
 def gen_report_monthly_income_actual():
     report=pd.DataFrame()
     output_index=True
@@ -213,6 +246,7 @@ def gen_report_tfsa_summary():
 
 gen_report={'monthly_income': gen_report_monthly_income,
             'monthly_income_actual': gen_report_monthly_income_actual,
+            'monthly_income_schedule': gen_report_monthly_income_sched,
             'tfsa_summary': gen_report_tfsa_summary,
            }
 
