@@ -77,7 +77,7 @@ def build_cmdline_parser():
                                       help='number of units participating in transaction')
     clp_command_transact.add_argument('amount',
                                       type=float,
-                                      help='price of a stock unit, dividend per unit, or contribution amount per unit')
+                                      help='price of a stock unit, total dividend income, or contribution amount per unit')
     clp_command_transact.add_argument('--date',
                                       type=date.fromisoformat,
                                       default=date.today(),
@@ -275,7 +275,7 @@ def append_csv(data_type, df_to_append):
     csv_file_df=pd.read_csv(investment_data[data_type].filename)
     combined_df=pd.concat([csv_file_df, df_to_append])
     print(f'\n{data_type} data appended and written to file:\n')
-    print(combined_df.to_string(index=False, na_rep='', show_dimensions=True,float_format=lambda x: '$%.2f'%x),'\n')
+    print(combined_df.tail(10).to_string(index=False, na_rep='', show_dimensions=True,float_format=lambda x: '$%.2f'%x),'\n')
     write_data_file('csv', combined_df, data_type, False)
 
 def buy_sell_transaction(args):
@@ -307,18 +307,18 @@ def buy_sell_transaction(args):
 def dividend_transaction(args):
     assets=pd.read_csv(investment_data['assets'].filename, index_col=0)
     try:
-        dividend=assets.loc[args.name,'income_per_unit_period']
+        existing_dividend=assets.loc[args.name,'income_per_unit_period']
     except KeyError:
         print(f'ERROR: "{args.name}" does not exist. Create asset before executing transaction.')
         return False
 
-    if dividend!=args.amount:
-        assets.loc[args.name,'income_per_unit_period']=args.amount
-        print(f'\nDividend has changed from {dividend} to {args.amount}\n')
+    new_dividend=args.amount/args.units
+    if existing_dividend!=new_dividend:
+        assets.loc[args.name,'income_per_unit_period']=new_dividend
+        print(f'\nDividend has changed from {existing_dividend} to {new_dividend}\n')
         write_data_file('csv', assets, 'assets', True)
 
-    total_dividend=round((args.units*args.amount)-args.fees,2)
-    df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,'',args.units,args.amount,round(args.fees,2),total_dividend]],
+    df=pd.DataFrame([[args.date.strftime("%Y-%m-%d"),args.type,args.name,args.account,'',args.units,new_dividend,round(args.fees,2),args.amount]],
                     columns=investment_data['transactions'].columns)
     append_csv('transactions', df)
     return True
