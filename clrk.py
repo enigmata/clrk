@@ -58,6 +58,9 @@ def build_cmdline_parser():
                                   help='display details of specified investment data')
     clp_command_list.add_argument('--filter',
                                   help="e.g. ((df['name']=='TD')|(df['name']=='ENB'))&(~(df['account']=='margin'))")
+    clp_command_list.add_argument('--tail',
+                                  type=int,
+                                  help="show only the specified number of rows of the end of the table")
 
     clp_command_transact = clp_commands.add_parser('transact',
                                                    help='perform a transaction on an asset')
@@ -266,6 +269,8 @@ def list_data(args, settings):
         float_format=lambda x: '$%.5f'%x
     else:
         float_format=lambda x: '$%.2f'%x
+    if args.tail:
+        df=df.tail(args.tail)
     print(df.to_string(index=False, na_rep='', show_dimensions=True,float_format=float_format))
     return settings
 
