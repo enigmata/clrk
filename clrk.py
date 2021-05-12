@@ -28,6 +28,9 @@ investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
                  'monthly_income': InvestmentDataDetails(filename=Path('income_monthly.csv'),
                                                          columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp','total_rrsp','total_nonrrsp','monthly_total','yearly_total'],
                                                          description='projected monthly income by account, including overall & RRSP and non-registered totals'),
+                 'monthly_income_growth': InvestmentDataDetails(filename=Path('income_monthly_growth.csv'),
+                                                                columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp'],
+                                                                description='monthly income growth by account'),
                  'monthly_income_schedule': InvestmentDataDetails(filename=Path('income_monthly_sched.csv'),
                                                                   columns=['name','jan_rrsp','jan_nonrrsp','feb_rrsp','feb_nonrrsp','mar_rrsp','mar_nonrrsp','apr_rrsp','apr_nonrrsp','may_rrsp','may_nonrrsp','jun_rrsp','jun_nonrrsp','jul_rrsp','jul_nonrrsp','aug_rrsp','aug_nonrrsp','sep_rrsp','sep_nonrrsp','oct_rrsp','oct_nonrrsp','nov_rrsp','nov_nonrrsp','dec_rrsp','dec_nonrrsp'],
                                                                   description='projected monthly income schedule'),
@@ -204,7 +207,7 @@ def gen_report_monthly_income_growth():
             else:
                 growth=0.0
             asset_growth_rates[acct]=growth
-        report=pd.concat([report,pd.DataFrame(data=asset_growth_rates,index=[asset])])
+        report=pd.concat([report,pd.DataFrame(data=asset_growth_rates,index=pd.Series(data=[asset],name='name'))])
     return report, output_index, float_format
 
 def gen_report_monthly_income_actual():
