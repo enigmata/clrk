@@ -18,7 +18,7 @@ class Verbosity(Enum):
 Settings=namedtuple('Settings', ['datapath','verbosity'])
 InvestmentDataDetails=namedtuple('InvestmentDataDetails', ['filename','columns','description'])
 AccountTypes=['sdrsp','locked_sdrsp','margin','tfsa','resp']
-ReportTypes=['monthly_income','monthly_income_actual','monthly_income_schedule','tfsa_summary']
+ReportTypes=['monthly_income','monthly_income_growth','monthly_income_actual','monthly_income_schedule','tfsa_summary']
 ReportFormats=['csv']
 TransactionTypes=['buy','sell','xfer','cont','cont_limit','div','withdraw']
 
@@ -95,8 +95,9 @@ def build_cmdline_parser():
     clp_command_report.add_argument('type',
                                      choices=ReportTypes,
                                      help='type of report to generate')
-    clp_command_report.add_argument('format',
+    clp_command_report.add_argument('--format',
                                      choices=ReportFormats,
+                                     default='csv',
                                      help='how to format the report')
 
     clp_command_datapath = clp_commands.add_parser('datapath', 
@@ -128,6 +129,7 @@ def write_data_file(file_type, df, data_type, output_index):
 def gen_report_monthly_income():
     report=pd.DataFrame()
     output_index=False
+    float_format=lambda x: '$%.2f'%x
     assets=pd.read_csv(investment_data['assets'].filename)
     report_series={'name': assets['name']}
     for account in AccountTypes:
@@ -145,11 +147,12 @@ def gen_report_monthly_income():
                                    columns=investment_data['monthly_income'].columns[:-1])
     report=pd.concat([report,monthly_totals],ignore_index=True)
     report.at[report.shape[0]-1,'yearly_total']=0
-    return report, output_index
+    return report, output_index, float_format
 
 def gen_report_monthly_income_sched():
     report=pd.DataFrame()
     output_index=True
+    float_format=lambda x: '$%.2f'%x
     assets=pd.read_csv(investment_data['assets'].filename, index_col=0)
     income={}
     for account in AccountTypes:
@@ -175,11 +178,39 @@ def gen_report_monthly_income_sched():
                                 columns=investment_data['monthly_income_schedule'].columns[1:],
                                 index=pd.Series(data={name:'TOTAL'},name='name'))
     report=pd.concat([report,monthly_totals])
-    return report, output_index
+    return report, output_index, float_format
+
+def gen_report_monthly_income_growth():
+    report=pd.DataFrame()
+    output_index=True
+    float_format=lambda x: '%.4f%%'%x
+    income_files=investment_data['monthly_income'].filename
+    income_files=income_files.parent/income_files.stem
+    income_files=sorted(income_files.parent.glob(income_files.stem+'_2*.csv'), reverse=True)
+    if len(income_files)<2:
+        print('ERROR: No previous income file with which to compare for growth rates.')
+        return report, output_index
+    previous_income_file=income_files[1]
+    print(f'Growth rate as compared with: {previous_income_file}\n')
+    previous_income_df=pd.read_csv(previous_income_file, index_col=0)
+    latest_income_df=pd.read_csv(investment_data['monthly_income'].filename, index_col=0)
+    for asset, latest_asset_incomes_df in latest_income_df.iterrows():
+        asset_growth_rates={}
+        for acct in AccountTypes:
+            previous_asset_acct_income=previous_income_df.loc[asset,acct]
+            latest_asset_acct_income=latest_asset_incomes_df.loc[acct]
+            if previous_asset_acct_income>0.0 and latest_asset_acct_income>0.0:
+                growth=((latest_asset_acct_income-previous_asset_acct_income)/previous_asset_acct_income)*100.0
+            else:
+                growth=0.0
+            asset_growth_rates[acct]=growth
+        report=pd.concat([report,pd.DataFrame(data=asset_growth_rates,index=[asset])])
+    return report, output_index, float_format
 
 def gen_report_monthly_income_actual():
     report=pd.DataFrame()
     output_index=True
+    float_format=lambda x: '$%.2f'%x
     assets=pd.read_csv(investment_data['assets'].filename, index_col=0)
     trans=pd.read_csv(investment_data['transactions'].filename, index_col=0)
     div_trans=trans[trans['type']=='div']
@@ -211,11 +242,12 @@ def gen_report_monthly_income_actual():
     income['yearly_total'][len(asset_index)-1]=0.0
     index_df=pd.Series(data=asset_index,name='name')
     report=pd.DataFrame(data=income,index=index_df)
-    return report, output_index
+    return report, output_index, float_format
 
 def gen_report_tfsa_summary():
     report=pd.DataFrame()
     output_index=True
+    float_format=lambda x: '$%.2f'%x
     trans=pd.read_csv(investment_data['transactions'].filename)
     tfsa_trans=trans[((trans['type'].isin(['cont','cont_limit','withdraw'])) & (trans['account']=='tfsa')) | (trans['xfer_account']=='tfsa')]
     pd.set_option('mode.chained_assignment',None)
@@ -245,18 +277,19 @@ def gen_report_tfsa_summary():
     print(f"\nTotal Contribution Room = ${cont_room:,.2f} (cont_limit + withdraw - cont - xfer_in\n")
     contrib_room=pd.DataFrame({'num':1, 'total':cont_room}, index=pd.Series(data={'type':'cont_room'},index=['type'],name='type'))
     report=pd.concat([report,contrib_room])
-    return report, output_index
+    return report, output_index, float_format
 
 gen_report={'monthly_income': gen_report_monthly_income,
             'monthly_income_actual': gen_report_monthly_income_actual,
+            'monthly_income_growth': gen_report_monthly_income_growth,
             'monthly_income_schedule': gen_report_monthly_income_sched,
             'tfsa_summary': gen_report_tfsa_summary,
            }
 
 def generate_report(args, settings):
     print(f'Generating the {args.type} report in the {args.format} format ...\n')
-    report, output_index=gen_report[args.type]()
-    print(report.to_string(index=output_index, show_dimensions=True,float_format=lambda x: '$%.2f'%x))
+    report, output_index, float_format=gen_report[args.type]()
+    print(report.to_string(index=output_index, show_dimensions=True,float_format=float_format))
     write_data_file(args.format, report, args.type, output_index)
     return settings
 
