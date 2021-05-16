@@ -265,10 +265,6 @@ def gen_report_tfsa_summary():
     except KeyError:
         cont_limit_sum=0.0
     try:
-        withdraw_sum=report['total']['withdraw']
-    except KeyError:
-        withdraw_sum=0.0
-    try:
         cont_sum=report['total']['cont']
     except KeyError:
         cont_sum=0.0
@@ -276,8 +272,8 @@ def gen_report_tfsa_summary():
         xfer_in_sum=report['total']['xfer_in']
     except KeyError:
         xfer_in_sum=0.0
-    cont_room=cont_limit_sum+withdraw_sum-cont_sum-xfer_in_sum
-    print(f"\nTotal Contribution Room = ${cont_room:,.2f} (cont_limit + withdraw - cont - xfer_in\n")
+    cont_room=cont_limit_sum-cont_sum-xfer_in_sum
+    print(f"\nTotal Contribution Room = ${cont_room:,.2f} (cont_limit - (cont + xfer_in))\n")
     contrib_room=pd.DataFrame({'num':1, 'total':cont_room}, index=pd.Series(data={'type':'cont_room'},index=['type'],name='type'))
     report=pd.concat([report,contrib_room])
     return report, output_index, float_format
