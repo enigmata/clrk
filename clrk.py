@@ -200,7 +200,10 @@ def gen_report_monthly_income_growth():
     for asset, latest_asset_incomes_df in latest_income_df.iterrows():
         asset_growth_rates={}
         for acct in AccountTypes:
-            previous_asset_acct_income=previous_income_df.loc[asset,acct]
+            try:
+                previous_asset_acct_income=previous_income_df.loc[asset,acct]
+            except KeyError:
+                previous_asset_acct_income=0.0
             latest_asset_acct_income=latest_asset_incomes_df.loc[acct]
             if previous_asset_acct_income>0.0 and latest_asset_acct_income>0.0:
                 growth=((latest_asset_acct_income-previous_asset_acct_income)/previous_asset_acct_income)*100.0
