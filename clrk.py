@@ -17,7 +17,10 @@ class Verbosity(Enum):
 
 Settings=namedtuple('Settings', ['datapath','verbosity'])
 InvestmentDataDetails=namedtuple('InvestmentDataDetails', ['filename','columns','description'])
-AccountTypes=['sdrsp','locked_sdrsp','margin','tfsa','resp']
+RRSPIncomeAccountTypes=['sdrsp','locked_sdrsp']
+NonRRSPIncomeAccountTypes=['margin','tfsa']
+IncomeAccountTypes=RRSPIncomeAccountTypes+NonRRSPIncomeAccountTypes
+AccountTypes=IncomeAccountTypes+['resp']
 ReportTypes=['monthly_income','monthly_income_growth','monthly_income_actual','monthly_income_schedule','tfsa_summary']
 ReportFormats=['csv']
 TransactionTypes=['buy','sell','xfer','cont','cont_limit','div','withdraw']
@@ -26,16 +29,16 @@ investment_data={'assets': InvestmentDataDetails(filename=Path('assets.csv'),
                                                  columns=['name','market','type','subtype','income_per_unit_period','sdrsp','locked_sdrsp','margin','tfsa','resp','income_freq_months','income_first_month','income_day_of_month'],
                                                  description='ledger of owned financial instruments'),
                  'monthly_income': InvestmentDataDetails(filename=Path('income_monthly.csv'),
-                                                         columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp','total_rrsp','total_nonrrsp','monthly_total','yearly_total'],
+                                                         columns=['name','sdrsp','locked_sdrsp','margin','tfsa','total_rrsp','total_nonrrsp','monthly_total','yearly_total'],
                                                          description='projected monthly income by account, including overall & RRSP and non-registered totals'),
                  'monthly_income_growth': InvestmentDataDetails(filename=Path('income_monthly_growth.csv'),
-                                                                columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp'],
+                                                                columns=['name','sdrsp','locked_sdrsp','margin','tfsa'],
                                                                 description='monthly income growth by account'),
                  'monthly_income_schedule': InvestmentDataDetails(filename=Path('income_monthly_sched.csv'),
                                                                   columns=['name','jan_rrsp','jan_nonrrsp','feb_rrsp','feb_nonrrsp','mar_rrsp','mar_nonrrsp','apr_rrsp','apr_nonrrsp','may_rrsp','may_nonrrsp','jun_rrsp','jun_nonrrsp','jul_rrsp','jul_nonrrsp','aug_rrsp','aug_nonrrsp','sep_rrsp','sep_nonrrsp','oct_rrsp','oct_nonrrsp','nov_rrsp','nov_nonrrsp','dec_rrsp','dec_nonrrsp'],
                                                                   description='projected monthly income schedule'),
                  'monthly_income_actual': InvestmentDataDetails(filename=Path('income_monthly_actual.csv'),
-                                                                columns=['name','sdrsp','locked_sdrsp','margin','tfsa','resp','total_rrsp','total_nonrrsp','monthly_total','yearly_total'],
+                                                                columns=['name','sdrsp','locked_sdrsp','margin','tfsa','total_rrsp','total_nonrrsp','monthly_total','yearly_total'],
                                                                 description='actual monthly income by account, including overall & RRSP and non-registered totals'),
                  'tfsa_summary': InvestmentDataDetails(filename=Path('tfsa_summary.csv'),
                                                        columns=['num','total'],
@@ -135,7 +138,7 @@ def gen_report_monthly_income():
     float_format=lambda x: '$%.2f'%x
     assets=pd.read_csv(investment_data['assets'].filename)
     report_series={'name': assets['name']}
-    for account in AccountTypes:
+    for account in IncomeAccountTypes:
         report_series[account]=assets[account].mul(assets['income_per_unit_period']).divide(assets['income_freq_months'])
     report_series['total_rrsp']=report_series['sdrsp'].add(report_series['locked_sdrsp'])
     report_series['total_nonrrsp']=report_series['margin'].add(report_series['tfsa'])
@@ -143,7 +146,7 @@ def gen_report_monthly_income():
     monthly_by_account=pd.DataFrame([['TOTAL MONTHLY']+[series.sum() for label,series in report.items() if label!='name']],
                                      columns=investment_data['monthly_income'].columns[:-2])
     report=pd.concat([report,monthly_by_account],ignore_index=True)
-    report['monthly_total']=report['resp'].add(report['total_rrsp']).add(report['total_nonrrsp'])
+    report['monthly_total']=report['total_rrsp'].add(report['total_nonrrsp'])
     monthly_totals=report[report['name']=='TOTAL MONTHLY']
     report['yearly_total']=report['monthly_total'].mul(12)
     monthly_totals=pd.DataFrame([['TOTAL YEARLY']+[series.sum()*12 for label,series in monthly_totals.items() if label!='name' and label!='yearly_total']],
@@ -199,7 +202,7 @@ def gen_report_monthly_income_growth():
     latest_income_df=pd.read_csv(investment_data['monthly_income'].filename, index_col=0)
     for asset, latest_asset_incomes_df in latest_income_df.iterrows():
         asset_growth_rates={}
-        for acct in AccountTypes:
+        for acct in IncomeAccountTypes:
             try:
                 previous_asset_acct_income=previous_income_df.loc[asset,acct]
             except KeyError:
@@ -225,7 +228,7 @@ def gen_report_monthly_income_actual():
     for i, (n,a) in enumerate(assets.iterrows()):
         asset_index.append(n)
         income_freq=a['income_freq_months']
-        for acct in AccountTypes:
+        for acct in IncomeAccountTypes:
             if a[acct]>0:
                 acct_divs=div_trans[(div_trans['name']==n)&(div_trans['account']==acct)].sort_values('date')
                 try:
@@ -237,7 +240,7 @@ def gen_report_monthly_income_actual():
             income[acct].append(div_income/income_freq)
         income['total_rrsp'].append(income['sdrsp'][i]+income['locked_sdrsp'][i])
         income['total_nonrrsp'].append(income['margin'][i]+income['tfsa'][i])
-        income['monthly_total'].append(income['total_rrsp'][i]+income['total_nonrrsp'][i]+income['resp'][i])
+        income['monthly_total'].append(income['total_rrsp'][i]+income['total_nonrrsp'][i])
         income['yearly_total'].append(income['monthly_total'][i]*12)
 
     asset_index.extend(['TOTAL_MONTHLY','TOTAL_YEARLY'])
